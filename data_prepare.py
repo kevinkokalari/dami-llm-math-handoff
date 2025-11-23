@@ -4,12 +4,17 @@ import os
 import sys
 import json
 import pickle as pkl
-import jieba
-import jieba.posseg as pseg
 import logging
 from tqdm import tqdm
 import numpy as np
 import warnings
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk import pos_tag
+from textblob import TextBlob
+
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 
@@ -19,10 +24,7 @@ prodir = '..'
 sys.path.insert(0, prodir)
 
 from vocab import Vocab
-from utility import get_now_time
 from keras.preprocessing.sequence import pad_sequences
-from keras.utils import to_categorical
-from snownlp import SnowNLP
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 
@@ -44,20 +46,18 @@ pos2id = {
 
 
 class DataPrepare(object):
-    def __init__(self, mode='train', data_name='normal', log_path=None, use_pre_train=True, embed_size=200,
-                 use_senti=True):
+    def __init__(self, mode='vocab', data_name='vocab', log_path=None, use_pre_train=False, embed_size=200, use_senti=True):
         """
         Constant variable declaration and configuration.
         """
         self.use_senti = use_senti
         self.pos_dim = 52
 
-        if data_name == 'clothing':
-            dataset_folder_name = '/data' + '/clothing'
-            self.raw_dialogue_path = curdir + dataset_folder_name + '/cloth_annotated_3500.shuf.json'
-            self.train_raw_path = curdir + dataset_folder_name + '/mhch_cloth_train.json'
-            self.val_raw_path = curdir + dataset_folder_name + '/mhch_cloth_eval.json'
-            self.test_raw_path = curdir + dataset_folder_name + '/mhch_cloth_test.json'
+        if data_name == 'vocab':
+            self.raw_dialogue_path = 'vocab.json'
+            self.train_raw_path = 'train.json'
+            self.val_raw_path = 'eval.json'
+            self.test_raw_path = 'eval.json'
 
         elif data_name == 'makeup':
             dataset_folder_name = '/data' + '/makeup'
@@ -69,14 +69,14 @@ class DataPrepare(object):
         else:
             raise ValueError("Please confirm the correct data mode you entered.")
 
-        self.vocab_save_path = curdir + dataset_folder_name + '/vocab.pkl'
-        self.train_path = curdir + dataset_folder_name + '/train.pkl'
-        self.val_path = curdir + dataset_folder_name + '/eval.pkl'
-        self.test_path = curdir + dataset_folder_name + '/test.pkl'
-        self.predict_path = curdir + dataset_folder_name + '/predict.pkl'
+        self.vocab_save_path = 'vocab.pkl'
+        self.train_path = 'train.pkl'
+        self.val_path = 'eval.pkl'
+        self.test_path = 'test.pkl'
+        self.predict_path = 'predict.pkl'
 
         self.use_pre_train = use_pre_train
-        self.pre_train_embeddings_path = curdir + '/data/w2v/cbow.word2vec.200d'
+        self.pre_train_embeddings_path ='/data/w2v/cbow.word2vec.200d'
         self.embed_size = embed_size
 
         self.dialogues_list = []
@@ -111,8 +111,7 @@ class DataPrepare(object):
             raise ValueError("{} mode not exists, please check it.".format(mode))
 
         if not os.path.exists(data_path):
-            now_time = get_now_time()
-            raise ValueError("{}: File {} is not exist.".format(now_time, data_path))
+            raise ValueError("{}: File {} is not exist.".format(data_path))
 
         with open(data_path, 'r', encoding='utf-8', errors='ignore', newline='\n') as fin:
             print("Open {} successfully.".format(data_path))
@@ -132,9 +131,15 @@ class DataPrepare(object):
 
                 try:
                     json_obj = json.loads(line)
-                    tmp_label_list = []
-                    self.dialogues_list.append(json_obj["session"])
-                    self.session_id_list.append(json_obj["sessionID"])
+                    #print(json_obj[count-1]["session"])
+
+                    #print(type(json_obj[count-1]["session"]))
+                    #input()
+                    #print(count)
+                    for element in json_obj:
+
+                        self.dialogues_list.append(element["session"])
+                        self.session_id_list.append(element["sessionID"])
 
                 except ValueError as e:
                     error_num += 1
@@ -153,19 +158,22 @@ class DataPrepare(object):
         else:
             return self.gen_vocab()
 
+
     def word_iter(self):
         """
         Iterates over all the words in dialogue content.
         :return: a generator
         """
-
         if self.dialogues_list is not None:
             for dialogue in self.dialogues_list:
                 for one_turn in dialogue:
-                    for token, postag in pseg.cut(one_turn["content"]):
+                    tokens = word_tokenize(one_turn["content"])
+                    postags = pos_tag(tokens)
+                    for token, postag in postags: 
                         yield token, postag
         else:
             raise ValueError("Get a empty dialogues_list.")
+ 
 
     def convert2ids(self):
         """
@@ -183,19 +191,24 @@ class DataPrepare(object):
                 label_list = []
                 senti_scores_list = []
                 for one_turn in dialogue:
-                    tmp_ids = vocab.convert2ids(jieba.cut(one_turn["content"]))
-                    tmp_tfs = vocab.convert2tfs(jieba.cut(one_turn["content"]))
+                    tokens = word_tokenize(one_turn["content"])
+                    #tmp_ids = vocab.convert2ids(jieba.cut(one_turn["content"]))
+                    tmp_ids = vocab.convert2ids(tokens)
+                    #tmp_tfs = vocab.convert2tfs(jieba.cut(one_turn["content"]))
+                    tmp_tfs = vocab.convert2tfs(tokens)
                     # pos
                     one_pos_list = []
-                    for _, pos_flag in pseg.cut(one_turn["content"]):
-                        if vocab.pos2id.__contains__(pos_flag):
-                            pos_id = vocab.pos2id[pos_flag]
+                    tokens = word_tokenize(one_turn["content"])
+                    postags = pos_tag(tokens)
+                    for _, postag in postags:
+                        if vocab.pos2id.__contains__(postag):
+                            pos_id = vocab.pos2id[postag]
                         else:
-                            print("unknow pos tag: {}".format(pos_flag))
+                            print("unknow pos tag: {}".format(postag))
                             pos_id = 0
                         one_pos_list.append(pos_id)
                     pos_list.append(one_pos_list)
-                    tmp_role = 0 if one_turn["role"] == "c2b" else 1
+                    tmp_role = 0 if one_turn["role"] == "Student" else 1   #<-------- ÄNDRA HÄR!!!
 
                     dialogue_ids.append(tmp_ids)
                     dialogue_tfs.append(tmp_tfs)
@@ -205,8 +218,11 @@ class DataPrepare(object):
                         if len(one_turn["content"]) == 0:
                             tmp_senti = 0.5
                         else:
-                            tmp_ss = SnowNLP(one_turn["content"])
-                            tmp_senti = tmp_ss.sentiments
+                            # tmp_ss = SnowNLP(one_turn["content"])
+                            # tmp_senti = tmp_ss.sentiments
+                            tmp_tb = TextBlob(one_turn["content"])
+                            tmp_senti = tmp_tb.sentiment.polarity   # DETTA RETURNERAR ETT TAL MELLAN -1 OCH 1 TILL SKILLNAD FRÅN TIDIGARE MELLAN 0 OCH 1! 
+
                         senti_scores_list.append(tmp_senti)
                     label_list.append(int(one_turn["label"]))
                 self.dialogues_sent_len_list.append(tmp_sent_len_list)
@@ -218,17 +234,23 @@ class DataPrepare(object):
                 self.role_list.append(role_ids)
                 self.senti_list.append(senti_scores_list)
                 self.label_list.append(label_list)
+                #print(label_list)
+                #input()
 
         # scale
         ss_senti = StandardScaler()
         self.senti_list = pad_sequences(self.senti_list, maxlen=30, padding='post', truncating='post', value=0.5)
-        self.senti_list = ss_senti.fit_transform(self.senti_list)
+        self.senti_list = ss_senti.fit_transform(self.senti_list)  # DETTA KAN VARA ÖVERFLÖDIGT! JUSTERAR TILL TAL I INTERVALLET: 0 +- 1
         ss_tf = MinMaxScaler()
         self.tf_list = pad_sequences(self.tf_list, maxlen=30, padding='post', truncating='post', dtype='float32')
         self.tf_list_reshape = np.reshape(self.tf_list, (-1, 50))
         self.tf_list_reshape = ss_tf.fit_transform(self.tf_list_reshape)
         self.tf_list = np.reshape(self.tf_list_reshape, (-1, 30, 50))
         print("Transform all data {} to id successfully!".format(len(self.dialogues_len_list)))
+        
+
+        #print(vocab.token_cnt)
+        #input()
 
     def gen_vocab(self, min_cnt=2):
         """
@@ -237,10 +259,13 @@ class DataPrepare(object):
         """
         vocab = Vocab(lower=True)
         for word, postag in self.word_iter():
+            #print(word)
             vocab.add(word)
             vocab.add_pos2id(postag)
 
+
         unfiltered_vocab_size = vocab.size()
+        #print(unfiltered_vocab_size)
         vocab.filter_tokens_by_cnt(min_cnt=min_cnt)
         filtered_num = unfiltered_vocab_size - vocab.size()
         print('After filter {} tokens, the final vocab size is {}'.format(filtered_num, vocab.size()))
@@ -260,6 +285,8 @@ class DataPrepare(object):
         with open(self.vocab_save_path, 'wb') as fout:
             pkl.dump(vocab, fout)
         print('Done with vocab!')
+        #print(vocab.token_cnt)
+        #input()
         return vocab
 
     def desensitization(self):
@@ -335,16 +362,17 @@ class DataPrepare(object):
 
 if __name__ == '__main__':
 
+    # mode_list = ['train', 'eval', 'test']
     mode_list = ['train', 'eval', 'test']
-    data_name_list = ['clothing', 'makeup']
+    data_name_list = ['vocab']
+    
     for data_name in data_name_list:
         # gen vocabulary
-        data_prepare = DataPrepare(mode='vocab',
-                                   data_name=data_name)
+        data_prepare = DataPrepare(mode='vocab', data_name=data_name)
         data_prepare.gen_vocab(min_cnt=2)
         for mode in mode_list:
-            data_prepare = DataPrepare(mode=mode,
-                                       data_name=data_name)
+            print(mode.upper() + "!")
+            data_prepare = DataPrepare(mode=mode, data_name=data_name)
             # save2pkl
             data_prepare.save_data(mode=mode)
 

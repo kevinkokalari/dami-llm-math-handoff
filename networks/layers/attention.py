@@ -2,14 +2,9 @@
 # -*- coding:utf8 -*-
 
 """
-@Reference: https://www.jianshu.com/p/cc6407444a8c   <Hierarchical attention networks for document classification.>
-@Author   : Lau James
-@Contact  : LauJames2017@whu.edu.cn
-@Project  : keyword_function_recognition 
-@File     : attention.py
-@Time     : 19-1-19 下午1:38
-@Software : PyCharm
-@Copyright: "Copyright (c) 2018 Lau James. All Rights Reserved"
+@Reference         : https://www.jianshu.com/p/cc6407444a8c   <Hierarchical attention networks for document classification.>
+@Original Author   : Lau James (LauJames2017@whu.edu.cn)
+@Modified by       : Kevin Kokalari (kokalari@kth.se), Andreas Weiss (aweiss@kth.se)
 """
 
 import warnings
@@ -41,7 +36,7 @@ def attention(inputs, attention_size, time_major=False, return_alphas=False):
     b_omega = tf.Variable(tf.random.normal([attention_size], stddev=0.1))
     u_omega = tf.Variable(tf.random.normal([attention_size], stddev=0.1))
 
-    with tf.name_scope('v'):
+    with tf.compat.v1.name_scope('v'):
         # Applying fully connected layer with non-linear activation to each of the B*T timestamps.
         # The shape of 'v' is (B, T, D) * (D, A) = (B, T, A), where A=Attention_size
         v = tf.tanh(tf.tensordot(inputs, w_omega, axes=1) + b_omega)

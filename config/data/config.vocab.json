@@ -1,0 +1,8 @@
+{
+    "data_name": "vocab",
+    "train_size": 8030,
+    "val_size": 1005,
+    "test_size": 1006,
+    "nb_words": 16657,
+    "nb_classes": 2
+  }

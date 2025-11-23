@@ -3,7 +3,7 @@
 
 import os
 import sys
-import resource
+import psutil
 import time
 import warnings
 warnings.filterwarnings('ignore',category=FutureWarning)
@@ -26,7 +26,7 @@ def print_trainable_variables(output_detail, logger):
         shape = variable.get_shape()
         variable_parameters = 1
         for dim in shape:
-            variable_parameters *= dim.value
+            variable_parameters *= dim
         total_parameters += variable_parameters
         if len(shape) == 1:
             parameters_string += ("%s %d\n" % (variable.name, variable_parameters))
@@ -88,16 +88,10 @@ def show_layer_info_with_memory(layer_name, layer_out, logger=None):
 
 
 def show_memory_use():
-    rusage_denom = 1024.
-    if sys.platform == 'darwin':
-        rusage_denom = rusage_denom * rusage_denom
-    ru = resource.getrusage(resource.RUSAGE_SELF)
-    total_memory = 1. * (ru.ru_maxrss + ru.ru_ixrss +
-                         ru.ru_idrss + ru.ru_isrss) / rusage_denom
-    strinfo = "\x1b[33m [Memory] Total Memory Use: %.4f MB \t Resident: %ld Shared: %ld UnshareData: " \
-              "%ld UnshareStack: %ld \x1b[0m" % \
-              (total_memory, ru.ru_maxrss, ru.ru_ixrss, ru.ru_idrss, ru.ru_isrss)
+    total_memory = psutil.Process(os.getpid()).memory_info().rss / (1024.0 ** 2)  # Memory in MB
+    strinfo = "\x1b[33m [Memory] Total Memory Use: %.4f MB \x1b[0m" % total_memory
     return strinfo
+
 
 
 def get_a_p_r_f_sara(target, predict, category):

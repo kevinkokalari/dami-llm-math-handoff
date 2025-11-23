@@ -16,6 +16,7 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore',category=FutureWarning)
 import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
 from utility import *
 from keras.utils import to_categorical
 from Network import Network
@@ -84,22 +85,22 @@ class DAMI(Network):
         self.sent_pos_emb = positional_encoding(self.embedded_reshaped, self.sent_max_len)
         self.embedded_all = tf.concat([self.embedded_reshaped, self.sent_pos_emb, self.pos_list_reshaped], axis=-1)
 
-        with tf.name_scope('sent_encoding'):
+        with tf.compat.v1.name_scope('sent_encoding'):
             # [B * D_len, S_len, 2 * H]; [B * D_len, 2 * H]
             self.sent_encoder_output, self.sent_encoder_state = self._bidirectional_rnn(self.embedded_all, self.sent_len_reshape, rnn_type='lstm')
             
-            with tf.variable_scope('sent_difficulty_atten'):
+            with tf.compat.v1.variable_scope('sent_difficulty_atten'):
                 # Trainable parameters
                 hidden_size = self.embedded_all.get_shape().as_list()[-1]  # E_dim.
 
                 w_omega_c = tf.compat.v1.Variable(tf.random.normal([hidden_size, 2 * self.rnn_dim], stddev=0.1))
                 w_omega_a = tf.compat.v1.Variable(tf.random.normal([hidden_size, 2 * self.rnn_dim], stddev=0.1))
 
-                b_omega_c = tf.get_variable("b_omega_c", [2 * self.rnn_dim], initializer=tf.zeros_initializer())
-                b_omega_a = tf.get_variable("b_omega_a", [2 * self.rnn_dim], initializer=tf.zeros_initializer())
+                b_omega_c = tf.compat.v1.get_variable("b_omega_c", [2 * self.rnn_dim], initializer=tf.compat.v1.zeros_initializer())
+                b_omega_a = tf.compat.v1.get_variable("b_omega_a", [2 * self.rnn_dim], initializer=tf.compat.v1.zeros_initializer())
 
-                u_omega_c = tf.get_variable("u_omega_c", [2 * self.rnn_dim], initializer=tf.ones_initializer())
-                u_omega_a = tf.get_variable("u_omega_a", [2 * self.rnn_dim], initializer=tf.ones_initializer())
+                u_omega_c = tf.compat.v1.get_variable("u_omega_c", [2 * self.rnn_dim], initializer=tf.compat.v1.ones_initializer())
+                u_omega_a = tf.compat.v1.get_variable("u_omega_a", [2 * self.rnn_dim], initializer=tf.compat.v1.ones_initializer())
 
                 # [B * D_len]
                 self.agent_tag = tf.reshape(self.input_x2, shape=[-1])
@@ -109,7 +110,7 @@ class DAMI(Network):
                 self.agent_tag_sent = tf.tile(tf.expand_dims(self.agent_tag, axis=-1), multiples=[1, 50])
                 self.customer_tag_sent = tf.tile(tf.expand_dims(self.customer_tag, axis=-1), multiples=[1, 50])
 
-                with tf.name_scope('v_agent'):
+                with tf.compat.v1.name_scope('v_agent'):
                     # [B * D_len, S_len, 2H]
                     qk_a = tf.tanh(tf.matmul(self.embedded_all, w_omega_a) + b_omega_a)
                     # [B * D_len, S_len]
@@ -120,15 +121,15 @@ class DAMI(Network):
                     self.dif_mask = tf.sequence_mask(self.sent_len_reshape, maxlen=self.sent_max_len, dtype=tf.float32)
 
                     sent_paddings = tf.ones_like(self.dif_mask) * (-2**32+1)
-                    self.vu_masked_a = tf.where(tf.equal(self.dif_mask, 0), sent_paddings, vu_a)
-                    self.vu_masked_a = tf.where(tf.equal(self.agent_tag_sent, 0), sent_paddings, self.vu_masked_a)
+                    self.vu_masked_a = tf.compat.v1.where(tf.equal(self.dif_mask, 0), sent_paddings, vu_a)
+                    self.vu_masked_a = tf.compat.v1.where(tf.equal(self.agent_tag_sent, 0), sent_paddings, self.vu_masked_a)
                     self.alphas_a = tf.nn.softmax(self.vu_masked_a)
                     
-                with tf.name_scope('v_customer'):
+                with tf.compat.v1.name_scope('v_customer'):
                     qk_c = tf.tanh(tf.matmul(self.embedded_all, w_omega_c) + b_omega_c)
                     vu_c = tf.tensordot(qk_c * (1- self.tfs_reshaped), u_omega_c, axes=1, name='vu_c') 
-                    self.vu_masked_c = tf.where(tf.equal(self.dif_mask, 0), sent_paddings, vu_c)
-                    self.vu_masked_c = tf.where(tf.equal(self.customer_tag_sent, 0), sent_paddings, self.vu_masked_c)
+                    self.vu_masked_c = tf.compat.v1.where(tf.equal(self.dif_mask, 0), sent_paddings, vu_c)
+                    self.vu_masked_c = tf.compat.v1.where(tf.equal(self.customer_tag_sent, 0), sent_paddings, self.vu_masked_c)
                     self.alphas_c = tf.nn.softmax(self.vu_masked_c)
 
             # reduce with attention vector
@@ -143,11 +144,11 @@ class DAMI(Network):
                 # [B * D_len, 2 * H]
                 self.combine_emb = tf.nn.dropout(self.combine_emb, rate=1-self.dropout_keep_prob)
 
-        with tf.name_scope('sequence_context_encoding'):
+        with tf.compat.v1.name_scope('sequence_context_encoding'):
             with tf.compat.v1.variable_scope('local_inference'):
                 self.cross_match = tf.matmul(self.combine_emb, tf.transpose(self.combine_emb, [0, 2, 1]))
             
-                self.cross_match_upper = tf.matrix_band_part(self.cross_match, num_lower=0, num_upper=-1)
+                self.cross_match_upper = tf.linalg.band_part(self.cross_match, num_lower=0, num_upper=-1)
                 self.cross_match_sim_one_direct = self.cross_match - self.cross_match_upper
 
                 self.encode_local = tf.concat([self.combine_emb, self.cross_match_sim_one_direct], axis=-1)
@@ -158,11 +159,29 @@ class DAMI(Network):
             
             with tf.compat.v1.variable_scope('composition_RNN'):
                 # [B, D_len, 2 * H], [B, 2 * H]
-                cells = [tf.contrib.rnn.DropoutWrapper(tf.contrib.rnn.BasicLSTMCell(self.rnn_dim, state_is_tuple=True), output_keep_prob=self.dropout_keep_prob)]
-                rnn_cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
-                self.v_dia_encode_output, _ = tf.nn.dynamic_rnn(cell=rnn_cell, inputs=self.encode_local, sequence_length=self.dia_len, dtype=tf.float32)
+                cells = [tf.compat.v1.nn.rnn_cell.DropoutWrapper(tf.compat.v1.nn.rnn_cell.BasicLSTMCell(self.rnn_dim, state_is_tuple=True), output_keep_prob=self.dropout_keep_prob)]
+                #cells_pre_dropout = [tf.keras.layers.LSTMCell(self.rnn_dim) for _ in range(self.rnn_dim)]
+                
+                #cells = [tf.keras.layers.Dropout(rate=1 - self.dropout_keep_prob)(element) for element in cells_pre_dropout]
 
-        with tf.name_scope('dialogue_mask'):
+                rnn_cell = tf.compat.v1.nn.rnn_cell.MultiRNNCell(cells, state_is_tuple=True)
+                # rnn_cell = tf.keras.layers.RNN(cells, return_sequences=True, return_state=False)
+                self.v_dia_encode_output, _ = tf.compat.v1.nn.dynamic_rnn(cell=rnn_cell, inputs=self.encode_local, sequence_length=self.dia_len, dtype=tf.float32)
+
+                # self.v_dia_encode_output = tf.keras.layers.RNN(cell=rnn_cell, return_sequences=True, dtype=tf.float32, inputs=self.encode_local)
+                
+        
+                #self.v_dia_encode_output = rnn_cell(inputs=self.encode_local)
+
+                #print("cells", cells)
+                #print("rnn_cells", rnn_cell)
+                #print("self.v_dia_encode_output", self.v_dia_encode_output)
+                #input()
+
+
+                # self.v_dia_encode_output, _ = tf.compat.v1.nn.dynamic_rnn(cell=rnn_cell, inputs=self.encode_local, sequence_length=self.dia_len, dtype=tf.float32)
+
+        with tf.compat.v1.name_scope('dialogue_mask'):
             self.dia_seq_mask = tf.sequence_mask(self.dia_len, maxlen=self.dia_max_len, dtype=tf.float32)
 
         with tf.compat.v1.variable_scope('context-aware'):
@@ -171,9 +190,9 @@ class DAMI(Network):
             # padding mask
             self.d_att_mask = tf.tile(tf.expand_dims(self.dia_seq_mask, axis=-1), multiples=[1, 1, self.dia_max_len])
             paddings = tf.ones_like(self.d_att) * (-2**32+1)
-            self.a_att_masked = tf.where(tf.equal(self.d_att_mask, 0), paddings, self.d_att)
+            self.a_att_masked = tf.compat.v1.where(tf.equal(self.d_att_mask, 0), paddings, self.d_att)
             # sequence mask
-            self.d_att_alpha = tf.nn.softmax(tf.matrix_band_part(self.a_att_masked, num_lower=-1, num_upper=0))
+            self.d_att_alpha = tf.nn.softmax(tf.linalg.band_part(self.a_att_masked, num_lower=-1, num_upper=0))
             
             self.context_encode = tf.matmul(self.d_att_alpha, self.v_dia_encode_output)
             
@@ -183,7 +202,7 @@ class DAMI(Network):
             if self.dropout_keep_prob != 1:
                 self.combine_h = tf.nn.dropout(self.combine_h, rate=1-self.dropout_keep_prob)
 
-        with tf.name_scope("output"):
+        with tf.compat.v1.name_scope("output"):
             # [B, D_len, nb_classes]
             self.logits = tf.keras.layers.Dense(units=self.nb_classes, activation='softmax')(self.combine_h)
             
@@ -201,7 +220,7 @@ class DAMI(Network):
             """
             negative log likelyhood loss
             """
-            with tf.name_scope(scope, "log_loss"):
+            with tf.compat.v1.name_scope(scope, "log_loss"):
                 losses = - tf.reduce_sum(labels * tf.math.log(probs + epsilon), -1)
             return losses
         # masked loss
@@ -213,7 +232,7 @@ class DAMI(Network):
 
         self.all_params = tf.compat.v1.trainable_variables()
         if self.l2_reg_lambda > 0:
-            with tf.variable_scope('l2_loss'):
+            with tf.compat.v1.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
             self.loss += self.l2_reg_lambda * l2_loss
             self.logger.info("Add L2 Loss.")

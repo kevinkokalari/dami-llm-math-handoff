@@ -1,55 +1,180 @@
-# Machine-Human Chatting Handoff
-Tensorflow implementation of the AAAI-2021 paper: [Time to Transfer: Predicting and Evaluating Machine-Human Chatting Handoff](https://arxiv.org/pdf/2012.07610.pdf)
+# DAMI Hand-Off Model for LLM-Based Math Coaching
+by Kevin Kokalari (kokalari@kth.se), and Andreas Weiss (aweiss@kth.se)
 
-<div align=center><img src="./exemplar.png" height="500"/></div>
+This repository contains a modified version of the **DAMI** (Difficulty-Assisted Matching Inference) hand-off model, adapted to work in an LLM-based math coaching setting.
 
-## Requirements
+The goal is to automatically decide **when a human tutor should take over** from an LLM chatbot in a math help conversation. The model is trained and evaluated on AI-generated math dialogues and evaluated with **Golden Transfer within Tolerance (GT-T)** metrics.
 
-* Python 3.6 or higher
-* tensorflow=1.14
-* Keras==2.2.5
-* tqdm==4.35.0
-* jieba==0.39
-* gensim==3.8.3
-* snownlp==0.12.3
+![Handoff architecture](assets/process_img.png)
 
-## Environment
+This repository contains the implementation used in the following master thesis report:
 
-* Tesla V100 16GB GPU
-* CUDA 10.2
+[Using Hand-off in LLM-Automated Math Coaching](https://www.diva-portal.org/smash/record.jsf?pid=diva2%3A1886733&dswid=-7271)
 
-## Data Example
+---
+
+## Background
+
+DAMI is a Machine–Human Chatting Handoff (MHCH) model designed to detect when a chatbot can no longer handle a conversation and a human should step in. It combines:
+
+- difficulty-aware text encoding with BiLSTM + attention  
+- matching/repetition analysis between user turns  
+- an utterance-level classifier deciding “hand-off” vs “normal” messages
+
+In this project, DAMI is:
+
+- **ported from Chinese to English**, using `nltk` and `textblob` for tokenisation, POS-tagging and sentiment analysis.
+- trained on the **PRM800K** phase-2 dataset of AI-generated, expert-rated step-by-step math solutions.
+- evaluated for a math-tutoring scenario similar to services like **Mattecoach.se**.
+
+---
+
+## Dataset
+
+The code expects data derived from **PRM800K (phase 2)**:
+
+- Each sample contains:
+  - a math problem
+  - a sequence of AI-generated solution steps
+  - expert labels for each step: `good` (1), `ok` (0), `bad` (-1)
+
+For training the hand-off model, we assume:
+
+- steps labeled **`good` → `Normal`** (no hand-off needed)  
+- steps labeled **`ok` or `bad` → `Hand-off`** (a human should take over)
+
+The raw PRM800K data is **not included** in this repository.  
+Please obtain it from the original authors and point the preprocessing script to your local copy.
+
+
+---
+
+## Method
+
+High-level pipeline:
+
+1. **Preprocessing**
+   - Load PRM800K phase-2 conversations.
+   - For each math problem, sample one AI-generated continuation per step (when multiple are available).
+   - Convert expert ratings into “Normal” vs “Hand-off” labels.
+   - Build sequences of utterances for DAMI, keeping conversation order.
+
+2. **Text processing (English)**
+   - Tokenisation and part-of-speech tagging using **NLTK**.
+   - Sentiment / polarity features using **TextBlob**.
+   - Difficulty-assisted encoding with BiLSTM + attention, combining:
+     - word embeddings
+     - positional embeddings
+     - POS-tag embeddings, plus sentiment features
+
+3. **Hand-off classification**
+   - Matching Inference module detects repeated / semantically similar user messages.
+   - Utterance Labeling module predicts a probability of “Hand-off” for each message. 
+   - A threshold (e.g. 0.5) is used to decide the final label.
+
+4. **Evaluation**
+   - Compute **GT-T** metrics:
+     - GT-1, GT-2, GT-3 (different tolerances for how close the predicted hand-off is to the true point).  
+   - Also inspect confusion matrices for “Normal” vs “Hand-off” on the test set. 
+
+---
+
+## Results
+
+On the held-out test split, the adapted DAMI model achieves:
+
+- **Training loss:** 0.1612  
+- **Validation loss:** 0.2568  
+- **Test loss:** 0.2446  
+- **GT-1:** 91.71 %  
+- **GT-2:** 94.53 %  
+- **GT-3:** 95.42 %  
+
+The confusion matrix on the test set shows that the model:
+
+- correctly detects **1 908** hand-off situations,  
+- correctly keeps **4 692** normal messages,  
+- never misclassifies a true hand-off as normal (no false negatives),  
+- but sometimes triggers an early / unnecessary hand-off (673 false positives), making the model *pessimistic* but safe.  
+
+
+---
+
+## Getting started
+
+### 1. Install dependencies
+
+Create a virtual environment and install:
+
+```bash
+conda create -n handoff python=3.7
+conda activate handoff
+pip install -r requirements.txt
 ```
-C2B: *产品链接* 	(*URL of a product*)	[Normal]
-C2B: 买二送一。	(Buy two free one.)	[Normal]
-B2C: 亲亲您可以直接拍下您喜欢的(同一链接内)的3双加入购物车,付款的时候系统会在的减价的哦~ 	(Dear,  you can add your favorite three goods to shopping cart directly. The system will cut the price automatically when you pay! )	[Normal]
-C2B: 买的时候怎么一下买三条？	(How to buy three goods at once? )	[Normal]
-B2C: 亲亲，活动页面会有具体介绍若有满三减一活动的，直接拍下三双系统会自动立减的建议按现有的颜色组合拍。	(Dear, there will be a specific introduction on the detail page. If we have buy-two-free-one promotions, the system will cut the price automatically when you buy three goods. )	[Normal]
-C2B: 怎么能才能买一送一？	(How to enjoy buy one get one free? )	[Normal]
-B2C: 亲可以关注下我们店铺首页有活动的话会有详细说明哦单链接宝贝也经常会有买赠活动呢^-^近期活动如：活动1【袜宝贝】现时的优惠活动是满减哦 *URL of a product* 买二送一领券满28元立减10元，满58减20元，满88减30元……拍下自动减价，买得多减得多哦送的须自行备注好，若没有备注仓库会随机送哦! 活动2【身材管理——束腰、塑体衣、塑体裤、胸托等】新品促销、爆款上新，惊喜连连哦^-^ *URL of a product* ; 更多宝贝或活动请按分类查找哦。	(Dear, you can pay attention to the activities on the homepage of our store. If there are activities, there will be detailed explanations. Single link products will often have buy-and-free activities^-^ Recent activities such as Activity 1 [Socks] The current discount activities are buy-and-free. *Product URL*. Buy two, get one free coupon for over 28 Yuan and get 10 Yuan off, over 58 off 20 Yuan, over 88 off 30 Yuan. The system will automatically reduce the price, buy more, and get more discounts. You must notify us by yourself. If there is no notification, the warehouse will send it randomly! Activity 2 "body management-waist, body shaping clothes, body shaping pants, chest support, etc."  We are promoting new products; there are lots of new styles and surprises ^-^ *Product URL*; Please find more items or activities by category.)	[Transferable]
-B2C: 亲您拍下的宝贝还处于未付款状态哦，您请及时付款。我们发货是按照付款先后排单的，优先付款优先发货哦!	( Dear, your order has not been paid yet. We will give priority to delivery goods if you pay early.)	[Normal]
-C2B: 我不知道怎么去拍啊！	( I don't understand how to place orders.)	[Transferable]
-B2C: 小姐姐一般详情页会有说明，若问题还没解决请直接敲“人工”		(Beauties, the detail page will have instructions. If the problem has not been resolved, please type "manual".)	[Normal]
-C2B: *产品链接* 	(*URL of a product*)	[Normal]
-C2B: 有没有活人？	(Are there any living people? )	[Transferable]
+
+### 2. Prepare data (if you start from raw conversations):
+
+Run:
+```bash
+python data_prepare.py
 ```
+or use the prepared data by extracting `vocab.zip` into the `data/vocab` folder.
 
-## Usage
+### 3. Modify and set DAMI's hyperparameters
 
-1. Data processing
+Edit the hyperparameters stored under 'config/model' and 'config/data' for your scenario (e.g., sequence length, batch size, learning rate, dataset name).
 
-    To construct the vocabulary from the pre-trained word embeddings and corpus.  For the security of private information from customers, we performed the data desensitization and converted words to IDs. We save the processed data into pickle file.
+### 4. Train and evaluate DAMI:
 
-    ```
-    python data_prepare.py
-    ```
-    The pickle object contains: dialogue contents (word ID), role information, term frequency, POS tag, sentiment, length of utterance, length of dialogue, handoff labels
+Training:
+```bash
+python main.py --phase train --data_name vocab --model_name dami --gpu 0 --memory 0.80
+```
+Prediction / Evaluation:
+```bash
+python main.py --phase predict --data_name vocab --model_name dami  --model_path "path/to/checkpoint" --gpu 0 --memory 0.80
+```
+`--model_path` should point to the checkpoint produced during training.
 
-2. Train the model
 
-    python main.py --phase train --model_name dami --data_name clothing --memory 0 --suffix .128 --mode train  --ways dami
+---
+
+## Repository structure
+
+- `config/`
+  - `data/config.vocab.json` – data/preprocessing configuration
+  - `model/config.dami.json` – DAMI model and training configuration
+- `data/vocab/`
+  - `train.json` / `train.pkl` – training set
+  - `test.json` / `test.pkl` – test set
+  - `eval.json` / `eval.pkl` – evaluation set
+  - `vocab.json` / `vocab.pkl` – vocabulary and token mappings
+- `data/`
+  - `parsePickleToTxt.py` – helper script to inspect pickled datasets
+  - `attention.py` - the attention function of the DAMI model
+  - `transformer.py` - the transformer implementation for the DAMI model
+- `networks/layers/DAMI.py` – core DAMI model layers
+- `networks/Network.py` – network wrapper / training logic
+- `data_prepare.py` – preprocessing pipeline to build the `*.json` / `*.pkl` files
+- `data_loader.py` – dataset loading utilities
+- `main.py` – main entry point for training and evaluation
+- `utility.py`, `vocab.py` – helper functions and vocabulary tools
+- `requirements.txt` – Python dependencies
+- `README.md` – this file
+
+---
 
 
-## Data
+## Acknowledgements
 
-We propose two Chinese sales customer service dialogue datasets, namely Clothing and Makeup, which are collected from [Taobao](https://www.taobao.com/), one of the largest decentralized E-commerce platforms in the world. Clothing is a corpus with 3,500 dialogues in the clothing domain and Makeup is a corpus with 4,000 dialogues in the makeup domain. For the security of private information from customers, we performed the data desensitization and converted words to IDs. As a result, you cannot directly analyze the language pattern of handoff, but the dataset still provides some statistical information.
+This codebase is a fork and adaptation of the original **DAMI** implementation for
+Machine–Human Chatting Handoff by Liu et al.:
+
+> Jiawei Liu, Zhe Gao, Yangyang Kang, Zhuoren Jiang, Guoxiu He,  
+> Changlong Sun, Xiaozhong Liu, Wei Lu.  
+> *Time to Transfer: Predicting and Evaluating Machine-Human Chatting Handoff.*  
+> AAAI Conference on Artificial Intelligence, 2021.
+
+Original repository: <https://github.com/WeijiaLau/MHCH-DAMI>
+
+In this fork, we adapt DAMI to an English, math-coaching setting, add a preprocessing pipeline for PRM800K-style math dialogues, and evaluate the model with GT-T metrics for deciding when a human tutor should take over from an LLM.
