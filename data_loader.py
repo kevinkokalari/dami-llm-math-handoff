@@ -22,11 +22,13 @@ from keras.utils import to_categorical
 
 
 class Data_loader(object):
-    def __init__(self, mode='test', data_name='makeup', log_path=None):
+    def __init__(self, mode='test', data_name='vocab', log_path=None):
         """
         Constant variable declaration and configuration.
         """
-        if data_name == 'clothing':
+        if data_name == 'vocab':
+            dataset_folder_name = '/data' + '/vocab'
+        elif data_name == 'clothing':
             dataset_folder_name = '/data' + '/clothing'
         elif data_name == 'makeup':
             dataset_folder_name = '/data' + '/makeup'
@@ -106,7 +108,7 @@ class Data_loader(object):
             new_lens_list.append(tmp_new_lens)
         return new_lens_list
 
-    def data_generator_sup(self, data_name='makeup', mode='test', batch_size=32, shuffle=True, nb_classes=2, epoch=0):
+    def data_generator_sup(self, data_name='vocab', mode='test', batch_size=32, shuffle=True, nb_classes=2, epoch=0):
         print('Using data_generator_sup')
         self.load_pkl_data(mode=mode)
         x1 = self.dialogues_ids_list

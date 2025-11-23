@@ -12,6 +12,7 @@ sys.path.insert(0, prodir)
 
 import logging
 import warnings
+from keras.layers import LSTMCell, Dropout, RNN, Dense, Bidirectional, LSTM, GRUCell
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 from utility import *
@@ -42,7 +43,7 @@ class Network(object):
         self.keep_prob = keep_prob
 
         # initializer
-        self.initializer = tf.initializers.glorot_normal()
+        self.initializer = tf.compat.v1.initializers.glorot_normal()
 
         # optimizer config
         self.lr = lr
@@ -64,7 +65,7 @@ class Network(object):
         if self.memory > 0:
             num_threads = os.environ.get('OMP_NUM_THREADS')
             self.logger.info("Memory use is %s." % self.memory)
-            gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=float(self.memory))
+            gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=float(self.memory))
             config = tf.compat.v1.ConfigProto(gpu_options=gpu_options, intra_op_parallelism_threads=num_threads)
             self.sess = tf.compat.v1.Session(config=config)
         else:
@@ -160,7 +161,7 @@ class Network(object):
                 self.word_embeddings = tf.compat.v1.get_variable(
                     'word_embeddings',
                     shape=(self.nb_words, self.embedding_dim),
-                    initializer=tf.constant_initializer(embedding_matrix),
+                    initializer=tf.compat.v1.constant_initializer(embedding_matrix),
                     trainable=True
                 )
 
@@ -178,87 +179,82 @@ class Network(object):
         # [B, D_len, S_len, E_dim]
         self.embedded = tf.nn.embedding_lookup(self.word_embeddings, self.input_x1)
         if self.dropout_keep_prob != 1:
-            self.embedded = tf.nn.dropout(self.embedded, keep_prob=self.dropout_keep_prob)
+            self.embedded = tf.nn.dropout(self.embedded, rate=1 - (self.dropout_keep_prob))
 
         # [B * D_len, S_len, E_dim]
         self.embedded_reshaped = tf.reshape(self.embedded, shape=[-1, self.sent_max_len, self.embedding_dim])
         self.sent_len_reshape = tf.reshape(self.sent_len, shape=[-1])
 
-        with tf.name_scope('sent_encoding'):
+        with tf.compat.v1.name_scope('sent_encoding'):
             self.sent_encoder_output, self.sent_encoder_state = self._bidirectional_rnn(self.embedded_reshaped,
                                                                                         self.sent_len_reshape)
             if self.dropout_keep_prob != 1:
                 # [B * D_len, 2 * H]
-                self.sent_encoder_state = tf.nn.dropout(self.sent_encoder_state, keep_prob=self.dropout_keep_prob)
+                self.sent_encoder_state = tf.nn.dropout(self.sent_encoder_state, rate=1 - (self.dropout_keep_prob))
 
-        with tf.name_scope('sequence_context_encoding'):
+        with tf.compat.v1.name_scope('sequence_context_encoding'):
             # [B, D_len, 2 * H]
             self.sent_encoder_reshape = tf.reshape(self.sent_encoder_state, [-1, self.dia_max_len, 2 * self.rnn_dim])
             # RNN
-            cells = [tf.contrib.rnn.DropoutWrapper(tf.contrib.rnn.BasicLSTMCell(self.rnn_dim, state_is_tuple=True),
+            cells = [tf.contrib.rnn.DropoutWrapper(LSTMCell(self.rnn_dim, state_is_tuple=True),
                                                    output_keep_prob=self.dropout_keep_prob)]
-            rnn_cell = tf.contrib.rnn.MultiRNNCell(cells, state_is_tuple=True)
+            rnn_cell = tf.compat.v1.nn.rnn_cell.MultiRNNCell(cells, state_is_tuple=True)
             # [B, D_len, H] [B, H]
-            self.dia_encoder_output, self.dia_encoder_state = tf.nn.dynamic_rnn(cell=rnn_cell,
+            self.dia_encoder_output, self.dia_encoder_state = tf.compat.v1.nn.dynamic_rnn(cell=rnn_cell,
                                                                                 inputs=self.sent_encoder_reshape,
                                                                                 sequence_length=self.dia_len,
                                                                                 dtype=tf.float32)
 
-        with tf.name_scope('position_predict'):
+        with tf.compat.v1.name_scope('position_predict'):
             # [B, D_len]
-            self.position_dense_prob = tf.keras.layers.Dense(units=self.dia_max_len, activation=tf.nn.softmax)(
+            self.position_dense_prob = Dense(units=self.dia_max_len, activation=tf.nn.softmax)(
                 self.dia_encoder_output[:, -1, :])
 
-        with tf.name_scope('dialogue_mask'):
+        with tf.compat.v1.name_scope('dialogue_mask'):
 
             self.dia_seq_mask = tf.sequence_mask(self.dia_len, maxlen=self.dia_max_len, dtype=tf.float32)
             self.dia_position_pre_masked = self.dia_seq_mask * self.position_dense_prob
 
-        with tf.name_scope("output"):
+        with tf.compat.v1.name_scope("output"):
             self.logits = self.dia_position_pre_masked
             self.output = tf.argmax(self.logits, axis=-1)
             self.proba = tf.nn.softmax(self.logits)
 
         return self.logits
+    
 
     def _bidirectional_rnn(self, inputs, length, rnn_type='lstm'):
-        if rnn_type == 'lstm':
-            fw_rnn_cell = tf.nn.rnn_cell.LSTMCell(self.rnn_dim)
-            fw_rnn_cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(fw_rnn_cell,
-                                                                  input_keep_prob=self.dropout_keep_prob,
-                                                                  output_keep_prob=self.dropout_keep_prob)
-            bw_rnn_cell = tf.nn.rnn_cell.LSTMCell(self.rnn_dim)
-            bw_rnn_cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(bw_rnn_cell,
-                                                                  input_keep_prob=self.dropout_keep_prob,
-                                                                  output_keep_prob=self.dropout_keep_prob)
-            outputs, output_states = \
-                tf.nn.bidirectional_dynamic_rnn(fw_rnn_cell, bw_rnn_cell, inputs, sequence_length=length,
-                                                dtype=tf.float32)
-            # outputs, output_states = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(fw_rnn_cell), backward_layer=tf.keras.layers.LSTM(bw_rnn_cell))
-            fw_state, bw_state = output_states
-            fw_c, fw_h = fw_state
-            bw_c, bw_h = bw_state
-            fw_state, bw_state = fw_h, bw_h
 
-            final_output = tf.concat(outputs, -1)
-            final_state = tf.concat([fw_state, bw_state], -1)
+        mask = tf.sequence_mask(length)
+
+
+
+        if rnn_type == 'lstm':
+            fw_rnn_cell = tf.keras.layers.LSTM(self.rnn_dim, return_sequences=True, return_state=True)
+            bw_rnn_cell = tf.keras.layers.LSTM(self.rnn_dim, return_sequences=True, return_state=True, go_backwards=True)
+            bidirectional_layer = tf.keras.layers.Bidirectional(fw_rnn_cell, backward_layer=bw_rnn_cell)
+            rnn_outputs = bidirectional_layer(inputs, mask=mask)
+
+            final_output = tf.keras.layers.Dropout(rate=1-self.dropout_keep_prob)(rnn_outputs[0])
+
+            fw_h, fw_c = rnn_outputs[1], rnn_outputs[2]
+            bw_h, bw_c = rnn_outputs[3], rnn_outputs[4]
+            final_state = tf.concat([fw_h, bw_h], axis=-1)
+        
 
         elif rnn_type == 'gru':
-            fw_rnn_cell = tf.nn.rnn_cell.GRUCell(self.rnn_dim)
-            fw_rnn_cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(fw_rnn_cell,
-                                                                  input_keep_prob=self.dropout_keep_prob,
-                                                                  output_keep_prob=self.dropout_keep_prob)
-            bw_rnn_cell = tf.nn.rnn_cell.GRUCell(self.rnn_dim)
-            bw_rnn_cell = tf.compat.v1.nn.rnn_cell.DropoutWrapper(bw_rnn_cell,
-                                                                  input_keep_prob=self.dropout_keep_prob,
-                                                                  output_keep_prob=self.dropout_keep_prob)
-            outputs, output_states = \
-                tf.nn.bidirectional_dynamic_rnn(fw_rnn_cell, bw_rnn_cell, inputs, sequence_length=length,
-                                                dtype=tf.float32)
+            fw_rnn_cell = tf.keras.layers.GRU(self.rnn_dim, return_sequences=True, return_state=True)
+            bw_rnn_cell = tf.keras.layers.GRU(self.rnn_dim, return_sequences=True, return_state=True, go_backwards=True)
+            bidirectional_layer = tf.keras.layers.Bidirectional(fw_rnn_cell, backward_layer=bw_rnn_cell)
+            rnn_outputs = bidirectional_layer(inputs, mask=mask)
+            final_output = tf.keras.layers.Dropout(rate=1-self.dropout_keep_prob)(rnn_outputs[0])
+            fw_h = rnn_outputs[1]
+            bw_h = rnn_outputs[2]
+            final_state = tf.concat([fw_h, bw_h], axis=-1)
 
-            final_output = tf.concat(outputs, -1)
-            final_state = tf.concat(output_states, -1)
-
+        #print("final_output: ",final_output)
+        #print("final_state: " ,final_state)
+        #input()
         return final_output, final_state
 
     def _compute_loss(self):
@@ -266,7 +262,7 @@ class Network(object):
         The loss function
         """
 
-        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.input_y, logits=self.logits))
+        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.input_y, logits=self.logits))
         self.logger.info("Calculate Loss.")
 
         self.all_params = tf.compat.v1.trainable_variables()
@@ -301,7 +297,7 @@ class Network(object):
               val_mode='eval', test_mode='test'):
 
         print('Using train DAMI trainer without CRF.')
-        max_val = 0
+        max_val = -0.001
 
         for epoch in range(epochs):
             self.logger.info('Training the model for epoch {} with batch size {}'.format(epoch, batch_size))
@@ -391,13 +387,16 @@ class Network(object):
                                 "f1score": f1score, "auc": auc_score,
                                 "gt1": gt1, "gt2": gt2, "gt3": gt3}
 
+
                 if metrics_dict["f1score"] > max_val and save_best:
                     max_val = metrics_dict["f1score"]
                     self.save(self.save_dir, self.model_name + '.best')
 
         self.save(self.save_dir, self.model_name + '.last')
 
+
         if is_test:
+
             self.restore(self.save_dir, self.model_name + '.best')
             self.evaluate_batch(data_generator, data_name, mode=test_mode,
                                 batch_size=batch_size, nb_classes=nb_classes, shuffle=False)
@@ -544,6 +543,7 @@ class Network(object):
                              self.input_y: Y,
                              self.dropout_keep_prob: keep_prob}
                 try:
+
                     _, step, loss, sequence, scores = self.sess.run([self.train_op, self.global_step,
                                                                      self.loss, self.viterbi_sequence, self.proba],
                                                                     feed_dict)
@@ -809,7 +809,8 @@ class Network(object):
                 if metrics_dict["f1score"] > max_val and save_best:
                     max_val = metrics_dict["f1score"]
                     self.save(self.save_dir, self.model_name + '.best')
-
+        
+  
         self.save(self.save_dir, self.model_name + '.last')
 
         if is_test:
