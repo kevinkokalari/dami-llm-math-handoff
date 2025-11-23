@@ -5,9 +5,14 @@ This repository contains a modified version of the **DAMI** (Difficulty-Assisted
 
 The goal is to automatically decide **when a human tutor should take over** from an LLM chatbot in a math help conversation. The model is trained and evaluated on AI-generated math dialogues and evaluated with **Golden Transfer within Tolerance (GT-T)** metrics.
 
-![Handoff architecture](assets/process_img.png)
 
-This repository contains the implementation used in the following master thesis report:
+<p align="center">
+  <img src="assets/process_img.png" alt="Handoff architecture" width="400">
+</p>
+
+---
+
+### This repository contains the implementation used in the following master thesis report:
 
 [Using Hand-off in LLM-Automated Math Coaching](https://www.diva-portal.org/smash/record.jsf?pid=diva2%3A1886733&dswid=-7271)
 
@@ -81,17 +86,74 @@ High-level pipeline:
 
 ## Results
 
-On the held-out test split, the adapted DAMI model achieves:
+#### On the held-out test split, the adapted DAMI model achieves:
 
-- **Training loss:** 0.1612  
-- **Validation loss:** 0.2568  
-- **Test loss:** 0.2446  
-- **GT-1:** 91.71 %  
-- **GT-2:** 94.53 %  
-- **GT-3:** 95.42 %  
+<div align="left">
+
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Value (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Training loss:</td>
+        <td align="right">0.1612</td>
+      </tr>
+      <tr>
+        <td>Validation loss:</td>
+        <td align="right">0.256</td>
+      </tr>
+      <tr>
+        <td>Test loss:</td>
+        <td align="right">0.2446</td>
+      </tr>
+      <tr>
+        <td>GT-1:</td>
+        <td align="right">91.71 %</td>
+      </tr>
+      <tr>
+        <td>GT-2:</td>
+        <td align="right">94.53 %</td>
+      </tr>
+      <tr>
+        <td>GT-3:</td>
+        <td align="right">95.42 %</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
+
+
+#### Confustion matrix:
+
+  <table>
+    <thead>
+      <tr>
+        <th> </th>
+        <th>Hand-off (True Value)</th>
+        <th>Normal (True Value)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Hand-off (Predicted Value)</b></td>
+        <td align="center">1908</td>
+        <td align="center">673</td>
+      </tr>
+      <td><b>Normal (Predicted Value)</b></td>
+        <td align="center">0</td>
+        <td align="center">4692</td>
+      </tr>
+    </tbody>
+  </table>
+
+</div>
 
 The confusion matrix on the test set shows that the model:
-
 - correctly detects **1 908** hand-off situations,  
 - correctly keeps **4 692** normal messages,  
 - never misclassifies a true hand-off as normal (no false negatives),  
