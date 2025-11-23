@@ -3,7 +3,7 @@ by Kevin Kokalari (kokalari@kth.se), and Andreas Weiss (aweiss@kth.se)
 
 This repository contains a modified version of the **DAMI** (Difficulty-Assisted Matching Inference) hand-off model, adapted to work in an LLM-based math coaching setting.
 
-The goal is to automatically decide **when a human tutor should take over** from an LLM chatbot in a math help conversation. The model is trained and evaluated on AI-generated math dialogues and evaluated with **Golden Transfer within Tolerance (GT-T)** metrics.
+The goal is to automatically decide when a human tutor should take over from an LLM chatbot in a math help conversation. The model is trained and evaluated on AI-generated math dialogues and evaluated with **Golden Transfer within Tolerance (GT-T)** metrics.
 
 
 <p align="center">
@@ -30,7 +30,7 @@ In this project, DAMI is:
 
 - **ported from Chinese to English**, using `nltk` and `textblob` for tokenisation, POS-tagging and sentiment analysis.
 - trained on the **PRM800K** phase-2 dataset of AI-generated, expert-rated step-by-step math solutions.
-- evaluated for a math-tutoring scenario similar to services like **Mattecoach.se**.
+- evaluated for a math-tutoring scenario similar to services like [*Mattecoach.se*](https://www.mattecoach.se).
 
 ---
 
