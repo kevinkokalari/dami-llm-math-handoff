@@ -12,7 +12,7 @@ The goal is to automatically decide when a human tutor should take over from an 
 
 ---
 
-### This repository contains the implementation used in the following master thesis report:
+### This repository contains the implementation used in the following bachelor thesis report:
 
 [Using Hand-off in LLM-Automated Math Coaching](https://www.diva-portal.org/smash/record.jsf?pid=diva2%3A1886733&dswid=-7271)
 
